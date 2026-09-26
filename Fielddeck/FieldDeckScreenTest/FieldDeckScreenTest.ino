@@ -168,24 +168,6 @@ void updateDisplay() {
       display.print("---");
     }
 
-    display.setCursor(20, 155);
-    display.print("SAT: ");
-
-    if (gps.satellites.isValid()) {
-      display.print(gps.satellites.value());
-    } else {
-      display.print("---");
-    }
-
-    display.setCursor(20, 180);
-    display.print("HDOP: ");
-
-    if (gps.hdop.isValid()) {
-      display.print(gps.hdop.hdop(), 2);
-    } else {
-      display.print("---");
-    }
-
     display.setCursor(20, 215);
     display.print("SPEED: ");
 
