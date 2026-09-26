@@ -1,10 +1,9 @@
 #include <GxEPD2_BW.h>
 #include <other/GxEPD2_420_SE0420NQ04.h>
 #include <SPI.h>
+#include <TinyGPSPlus.h>
 
-// ========================================
 // CrowPanel ESP32-S3 E-Paper 4.2" V1.2
-// ========================================
 
 // E-Paper pins
 #define EPD_CS    45
@@ -12,17 +11,23 @@
 #define EPD_RST   47
 #define EPD_BUSY  48
 
-// SPI pins
+// E-Paper SPI pins
 #define EPD_SCK   12
 #define EPD_MOSI  11
 
-// Display power rails
+// Display power
 #define PWR_MAIN  41
 #define PWR_EPD   7
 
-// ========================================
+// GPS
+
+#define GPS_UART_RX 18
+#define GPS_UART_TX 17
+
+HardwareSerial GPS(1);
+TinyGPSPlus gps;
+
 // Display object
-// ========================================
 
 GxEPD2_BW<
   GxEPD2_420_SE0420NQ04,
@@ -36,9 +41,12 @@ GxEPD2_BW<
   )
 );
 
-// ========================================
+// Timing
+
+unsigned long lastDisplayUpdate = 0;
+const unsigned long DISPLAY_INTERVAL = 5000;
+
 // Setup
-// ========================================
 
 void setup() {
 
@@ -47,10 +55,11 @@ void setup() {
 
   Serial.println();
   Serial.println("==============================");
-  Serial.println("FIELDDECK V1.2 DISPLAY TEST");
+  Serial.println("FIELDDECK GPS + DISPLAY TEST");
   Serial.println("==============================");
 
-  // Turn on the display power rails
+  // Display power
+
   pinMode(PWR_MAIN, OUTPUT);
   digitalWrite(PWR_MAIN, HIGH);
 
@@ -59,9 +68,10 @@ void setup() {
 
   delay(500);
 
-  Serial.println("Power rails ON");
+  Serial.println("Display power ON");
 
-  // Start SPI using the CrowPanel V1.2 pins
+  // Display SPI
+
   SPI.begin(
     EPD_SCK,
     -1,
@@ -69,9 +79,10 @@ void setup() {
     EPD_CS
   );
 
-  Serial.println("SPI started");
+  Serial.println("Display SPI started");
 
-  // Initialize the e-paper
+  // Initialize display
+
   display.init(
     115200,
     true,
@@ -81,7 +92,6 @@ void setup() {
 
   Serial.println("Display initialized");
 
-  // Select the SPI settings
   display.epd2.selectSPI(
     SPI,
     SPISettings(
@@ -91,12 +101,28 @@ void setup() {
     )
   );
 
-  Serial.println("SPI settings applied");
+  // GPS
 
-  // Full-screen update
+  GPS.begin(
+    38400,
+    SERIAL_8N1,
+    GPS_UART_RX,
+    GPS_UART_TX
+  );
+
+  Serial.println("GPS UART started");
+  Serial.println("Waiting for GPS data...");
+}
+
+// Update display
+
+
+void updateDisplay() {
+
+  Serial.println();
+  Serial.println("Updating display...");
+
   display.setFullWindow();
-
-  Serial.println("Drawing test screen...");
 
   display.firstPage();
 
@@ -106,33 +132,125 @@ void setup() {
 
     display.setTextColor(GxEPD_BLACK);
 
+    // Title
     display.setTextSize(2);
+    display.setCursor(20, 35);
+    display.print("FIELDDECK GPS");
 
-    display.setCursor(30, 60);
-    display.print("FIELDDECK");
+    // GPS data
+    display.setTextSize(1);
 
-    display.setCursor(30, 110);
-    display.print("V1.2 DISPLAY TEST");
+    display.setCursor(20, 75);
+    display.print("LAT: ");
 
-    display.setCursor(30, 160);
-    display.print("HELLO WORLD");
+    if (gps.location.isValid()) {
+      display.print(gps.location.lat(), 6);
+    } else {
+      display.print("SEARCHING...");
+    }
 
-    display.setCursor(30, 210);
-    display.print("400 x 300");
+    display.setCursor(20, 100);
+    display.print("LON: ");
+
+    if (gps.location.isValid()) {
+      display.print(gps.location.lng(), 6);
+    } else {
+      display.print("SEARCHING...");
+    }
+
+    display.setCursor(20, 130);
+    display.print("ALT: ");
+
+    if (gps.altitude.isValid()) {
+      display.print(gps.altitude.feet(), 0);
+      display.print(" FT");
+    } else {
+      display.print("---");
+    }
+
+    display.setCursor(20, 155);
+    display.print("SAT: ");
+
+    if (gps.satellites.isValid()) {
+      display.print(gps.satellites.value());
+    } else {
+      display.print("---");
+    }
+
+    display.setCursor(20, 180);
+    display.print("HDOP: ");
+
+    if (gps.hdop.isValid()) {
+      display.print(gps.hdop.hdop(), 2);
+    } else {
+      display.print("---");
+    }
+
+    display.setCursor(20, 215);
+    display.print("SPEED: ");
+
+    if (gps.speed.isValid()) {
+      display.print(gps.speed.mph(), 1);
+      display.print(" MPH");
+    } else {
+      display.print("---");
+    }
+
+    // Status
+    display.setCursor(20, 260);
+
+    if (gps.location.isValid()) {
+      display.print("GPS FIX: YES");
+    } else {
+      display.print("GPS FIX: SEARCHING");
+    }
 
   } while (display.nextPage());
 
-  Serial.println("DISPLAY UPDATE COMPLETE");
-
-  // Put display to sleep
-  display.hibernate();
-
-  Serial.println("DISPLAY SLEEP");
+  Serial.println("Display update complete");
 }
 
-// ========================================
-// Main loop
-// ========================================
-
 void loop() {
+
+  // Read GPS data
+  while (GPS.available()) {
+    gps.encode(GPS.read());
+  }
+
+  // Print GPS data when available
+  static unsigned long lastSerial = 0;
+
+  if (millis() - lastSerial >= 2000) {
+
+    lastSerial = millis();
+
+    Serial.println();
+    Serial.println("----- GPS STATUS -----");
+
+    if (gps.location.isValid()) {
+
+      Serial.print("Latitude:  ");
+      Serial.println(gps.location.lat(), 6);
+
+      Serial.print("Longitude: ");
+      Serial.println(gps.location.lng(), 6);
+
+      Serial.print("Altitude:  ");
+      Serial.print(gps.altitude.feet(), 0);
+      Serial.println(" ft");
+
+    } else {
+
+      Serial.println("Waiting for GPS fix...");
+
+    }
+  }
+
+  // Update e-paper every 5 seconds
+  if (millis() - lastDisplayUpdate >= DISPLAY_INTERVAL) {
+
+    lastDisplayUpdate = millis();
+
+    updateDisplay();
+  }
 }
