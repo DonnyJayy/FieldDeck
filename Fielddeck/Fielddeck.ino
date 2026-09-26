@@ -1,60 +1,82 @@
 #include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BNO055.h>
+#include <math.h>
 
-// I2C pins
-#define SDA_PIN 15
-#define SCL_PIN 16
-
-// Create BNO055 sensor
-Adafruit_BNO055 bno = Adafruit_BNO055(55, 0x29);
+#define MAG_ADDR 0x2C
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // Start I2C
-  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.begin(15, 16);
 
-  Serial.println("Starting BNO055...");
+  Serial.println("QMC5883P COMPASS TEST");
 
-  if (!bno.begin()) {
-    Serial.println("ERROR: BNO055 not found!");
-    while (1) {
-      delay(1000);
-    }
-  }
+  // Configure QMC5883P
+  Wire.beginTransmission(MAG_ADDR);
+  Wire.write(0x0A);
+  Wire.write(0x0D);
+  Wire.endTransmission();
 
-  Serial.println("BNO055 connected!");
-
-  // Give the sensor time to initialize
-  delay(1000);
-
-  // Use external crystal for better accuracy if your module has one
-  bno.setExtCrystalUse(true);
-
-  Serial.println("BNO055 ready!");
-  Serial.println();
+  delay(100);
 }
 
 void loop() {
-  // Get orientation
-  sensors_event_t orientationData;
-  bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
 
-  Serial.print("Heading: ");
-  Serial.print(orientationData.orientation.x);
-  Serial.println("°");
+  // Read status register
+  Wire.beginTransmission(MAG_ADDR);
+  Wire.write(0x09);
+  Wire.endTransmission(false);
 
-  Serial.print("Roll: ");
-  Serial.print(orientationData.orientation.y);
-  Serial.println("°");
+  Wire.requestFrom(MAG_ADDR, 1);
 
-  Serial.print("Pitch: ");
-  Serial.print(orientationData.orientation.z);
-  Serial.println("°");
+  if (Wire.available()) {
 
-  Serial.println("--------------------");
+    byte status = Wire.read();
 
-  delay(500);
+    if (status & 0x01) {
+
+      // Read X/Y/Z
+      Wire.beginTransmission(MAG_ADDR);
+      Wire.write(0x01);
+      Wire.endTransmission(false);
+
+      Wire.requestFrom(MAG_ADDR, 6);
+
+      if (Wire.available() >= 6) {
+
+        int16_t x = Wire.read();
+        x |= Wire.read() << 8;
+
+        int16_t y = Wire.read();
+        y |= Wire.read() << 8;
+
+        int16_t z = Wire.read();
+        z |= Wire.read() << 8;
+
+        // Calculate heading
+        float heading = atan2((float)y, (float)x) * 180.0 / PI;
+
+        // Convert negative angles to 0-360
+        if (heading < 0) {
+          heading += 360.0;
+        }
+
+        Serial.print("X: ");
+        Serial.print(x);
+
+        Serial.print("  Y: ");
+        Serial.print(y);
+
+        Serial.print("  Z: ");
+        Serial.print(z);
+
+        Serial.print("  Heading: ");
+        Serial.print(heading, 1);
+
+        Serial.println("°");
+      }
+    }
+  }
+
+  delay(100);
 }
