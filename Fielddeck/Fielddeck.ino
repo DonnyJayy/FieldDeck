@@ -1,82 +1,72 @@
-#include <Wire.h>
-#include <math.h>
+#include <TinyGPSPlus.h>
 
-#define MAG_ADDR 0x2C
+#define GPS_UART_RX 18
+#define GPS_UART_TX 17
+
+HardwareSerial GPS(1);
+TinyGPSPlus gps;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Wire.begin(15, 16);
+  GPS.begin(38400, SERIAL_8N1, GPS_UART_RX, GPS_UART_TX);
 
-  Serial.println("QMC5883P COMPASS TEST");
-
-  // Configure QMC5883P
-  Wire.beginTransmission(MAG_ADDR);
-  Wire.write(0x0A);
-  Wire.write(0x0D);
-  Wire.endTransmission();
-
-  delay(100);
+  Serial.println("FIELDDECK GPS TEST");
 }
 
 void loop() {
 
-  // Read status register
-  Wire.beginTransmission(MAG_ADDR);
-  Wire.write(0x09);
-  Wire.endTransmission(false);
-
-  Wire.requestFrom(MAG_ADDR, 1);
-
-  if (Wire.available()) {
-
-    byte status = Wire.read();
-
-    if (status & 0x01) {
-
-      // Read X/Y/Z
-      Wire.beginTransmission(MAG_ADDR);
-      Wire.write(0x01);
-      Wire.endTransmission(false);
-
-      Wire.requestFrom(MAG_ADDR, 6);
-
-      if (Wire.available() >= 6) {
-
-        int16_t x = Wire.read();
-        x |= Wire.read() << 8;
-
-        int16_t y = Wire.read();
-        y |= Wire.read() << 8;
-
-        int16_t z = Wire.read();
-        z |= Wire.read() << 8;
-
-        // Calculate heading
-        float heading = atan2((float)y, (float)x) * 180.0 / PI;
-
-        // Convert negative angles to 0-360
-        if (heading < 0) {
-          heading += 360.0;
-        }
-
-        Serial.print("X: ");
-        Serial.print(x);
-
-        Serial.print("  Y: ");
-        Serial.print(y);
-
-        Serial.print("  Z: ");
-        Serial.print(z);
-
-        Serial.print("  Heading: ");
-        Serial.print(heading, 1);
-
-        Serial.println("°");
-      }
-    }
+  while (GPS.available()) {
+    gps.encode(GPS.read());
   }
 
-  delay(100);
+  static unsigned long lastPrint = 0;
+
+  if (millis() - lastPrint >= 1000) {
+    lastPrint = millis();
+
+    Serial.println();
+    Serial.println("----- GPS DATA -----");
+
+    if (gps.location.isValid()) {
+      Serial.print("Latitude:  ");
+      Serial.println(gps.location.lat(), 6);
+
+      Serial.print("Longitude: ");
+      Serial.println(gps.location.lng(), 6);
+    } else {
+      Serial.println("Location: WAITING FOR FIX");
+    }
+
+    if (gps.altitude.isValid()) {
+      Serial.print("Altitude:  ");
+      Serial.print(gps.altitude.feet());
+      Serial.println(" ft");
+    } else {
+      Serial.println("Altitude:  WAITING");
+    }
+
+    if (gps.satellites.isValid()) {
+      Serial.print("Satellites: ");
+      Serial.println(gps.satellites.value());
+    } else {
+      Serial.println("Satellites: WAITING");
+    }
+
+    if (gps.hdop.isValid()) {
+      Serial.print("HDOP:       ");
+      Serial.println(gps.hdop.hdop());
+    } else {
+      Serial.println("HDOP:       WAITING");
+    }
+
+    if (gps.speed.isValid()) {
+      Serial.print("Speed:      ");
+      Serial.print(gps.speed.mph());
+      Serial.println(" mph");
+    }
+
+    Serial.println("--------------------");
+  }
 }
